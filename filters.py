@@ -3,15 +3,44 @@ from enum import IntEnum
 from typing import List
 
 from qgis.PyQt.QtWidgets import QMessageBox
-from qgis.core import QgsVectorLayer, QgsGeometry, QgsCoordinateReferenceSystem
+
+from qgis.core import (
+    QgsVectorLayer, 
+    QgsGeometry, 
+    QgsCoordinateReferenceSystem,
+    Qgis
+)
+
+if Qgis.QGIS_VERSION_INT > 33600:
+    from qgis.core import QgsSensorThingsUtils
+
 from qgis.utils import iface
 
-from .settings import FILTER_COMMENT_START, FILTER_COMMENT_STOP, LOCALIZED_PLUGIN_NAME
-from .helpers import tr, saveSettingsValue, readSettingsValue, allSettingsValues, removeSettingsValue, \
-    getLayerGeomName, matchFormatString
+from .settings import (
+    FILTER_COMMENT_START, 
+    FILTER_COMMENT_STOP, 
+    LOCALIZED_PLUGIN_NAME,
+    SENSORTHINGS_STORAGE_TYPE
+)
+
+from .helpers import (
+    tr, 
+    saveSettingsValue, 
+    readSettingsValue, 
+    allSettingsValues, 
+    removeSettingsValue,
+    getLayerGeomName, 
+    matchFormatString, 
+    getEntityTypeFromSensorThingsLayer,
+    reproject_wkt_geometry
+)
 
 
 FILTERSTRING_TEMPLATE = "{spatial_predicate}({geom_name}, ST_TRANSFORM(ST_GeomFromText('{wkt}', {srid}), {layer_srid}))"
+
+# sensorthings filter does not support reprojection (st_transform)
+# reprojection happens in helpers.py -> addFilterToLayer
+FILTERSTRING_TEMPLATE_SENSORTHINGS = "{spatial_predicate}({geom_name}, geography'{wkt}')"
 
 
 class Predicate(IntEnum):
@@ -51,14 +80,26 @@ class FilterDefinition:
         Returns:
             str: A layer filter string
         """
-        # ST_DISJOINT does not use spatial indexes, but we can use its opposite "NOT ST_INTERSECTS" which does
         spatial_predicate = f"ST_{Predicate(self.predicate).name}"
+        wkt = self.wkt if not self.bbox else self.boxGeometry.asWkt()
+        srid=self.crs.postgisSrid()
+        layer_srid=layer.crs().postgisSrid()
+
+        if layer.storageType() == SENSORTHINGS_STORAGE_TYPE:
+            reprojected_wkt = reproject_wkt_geometry(wkt, srid, layer_srid)
+            spatial_predicate = spatial_predicate.lower()  # sensorthings specification uses lower case
+            entity_str = getEntityTypeFromSensorThingsLayer(layer)
+            entity_type = QgsSensorThingsUtils.stringToEntity(entity_str)
+            geom_field = QgsSensorThingsUtils.geometryFieldForEntityType(entity_type)
+
+            return FILTERSTRING_TEMPLATE_SENSORTHINGS.format(
+                spatial_predicate=spatial_predicate,
+                geom_name=geom_field,
+                wkt=reprojected_wkt
+            )
+
         if self.predicate == Predicate.DISJOINT:
             spatial_predicate = "NOT ST_INTERSECTS"
-
-        wkt = self.wkt
-        if self.bbox:
-            wkt = self.boxGeometry.asWkt()
 
         geom_name = getLayerGeomName(layer)
 
@@ -66,9 +107,10 @@ class FilterDefinition:
             spatial_predicate=spatial_predicate,
             geom_name=geom_name,
             wkt=wkt,
-            srid=self.crs.postgisSrid(),
-            layer_srid=layer.crs().postgisSrid()
+            srid=srid,
+            layer_srid=layer_srid
         )
+
 
     @staticmethod
     def fromFilterString(subsetString: str) -> 'FilterDefinition':

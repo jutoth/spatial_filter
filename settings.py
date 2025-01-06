@@ -1,4 +1,5 @@
 from qgis.PyQt.QtCore import QCoreApplication
+from qgis.core import Qgis
 
 def tr(message):
     return QCoreApplication.translate('@default', message)
@@ -19,3 +20,8 @@ FILTER_COMMENT_STOP = '/* SpatialFilter Plugin Stop */'
 
 # The QGIS Storage Types that can be filtered by the plugin
 SUPPORTED_STORAGE_TYPES = ['POSTGRESQL DATABASE WITH POSTGIS EXTENSION', 'GPKG', 'SQLITE']
+
+SENSORTHINGS_STORAGE_TYPE = 'OGC SensorThings API'
+
+if Qgis.QGIS_VERSION_INT > 33600:
+    SUPPORTED_STORAGE_TYPES.append(SENSORTHINGS_STORAGE_TYPE.upper())

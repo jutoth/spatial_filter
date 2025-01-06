@@ -6,12 +6,24 @@ from typing import Any, List, Iterable
 from osgeo import ogr
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import Qgis, QgsExpressionContextUtils, QgsSettings, QgsMapLayer, QgsMapLayerType, QgsVectorLayer,\
-    QgsWkbTypes
+    QgsWkbTypes, QgsProviderRegistry
+
 from qgis.utils import iface
 
-from .settings import SUPPORTED_STORAGE_TYPES, GROUP, FILTER_COMMENT_START, FILTER_COMMENT_STOP, \
-    LAYER_EXCEPTION_VARIABLE, LOCALIZED_PLUGIN_NAME
+from .settings import (
+    SUPPORTED_STORAGE_TYPES, 
+    GROUP, 
+    FILTER_COMMENT_START, 
+    FILTER_COMMENT_STOP,
+    LAYER_EXCEPTION_VARIABLE, 
+    LOCALIZED_PLUGIN_NAME, 
+    SENSORTHINGS_STORAGE_TYPE
+)
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .filters import FilterDefinition
 
 def tr(message):
     return QCoreApplication.translate('@default', message)
@@ -73,23 +85,54 @@ def isLayerSupported(layer: QgsMapLayer):
 
 
 def removeFilterFromLayer(layer: QgsVectorLayer):
-    currentFilter = layer.subsetString()
-    if FILTER_COMMENT_START not in currentFilter:
-        return
-    start_index = currentFilter.find(FILTER_COMMENT_START)
-    stop_index = currentFilter.find(FILTER_COMMENT_STOP) + len(FILTER_COMMENT_STOP)
-    newFilter = currentFilter[:start_index] + currentFilter[stop_index:]
-    layer.setSubsetString(newFilter)
+    if layer.storageType() == SENSORTHINGS_STORAGE_TYPE:
+        layer.setSubsetString('')
+    else:
+        currentFilter = layer.subsetString()
+        if FILTER_COMMENT_START not in currentFilter:
+            return
+        start_index = currentFilter.find(FILTER_COMMENT_START)
+        stop_index = currentFilter.find(FILTER_COMMENT_STOP) + len(FILTER_COMMENT_STOP)
+        newFilter = currentFilter[:start_index] + currentFilter[stop_index:]
+        layer.setSubsetString(newFilter)
 
 
 def addFilterToLayer(layer: QgsVectorLayer, filterDef: 'FilterDefinition'):
     currentFilter = layer.subsetString()
-    if FILTER_COMMENT_START in currentFilter:
-        removeFilterFromLayer(layer)
-    currentFilter = layer.subsetString()
-    connect = " AND " if currentFilter else ""
-    newFilter = f'{currentFilter}{FILTER_COMMENT_START}{connect}{filterDef.filterString(layer)}{FILTER_COMMENT_STOP}'
-    layer.setSubsetString(newFilter)
+    if layer.storageType() == SENSORTHINGS_STORAGE_TYPE:
+        newFilter = filterDef.filterString(layer)
+        layer.setSubsetString(newFilter)
+    else:
+        if FILTER_COMMENT_START in currentFilter:
+            removeFilterFromLayer(layer)
+        currentFilter = layer.subsetString()
+        connect = " AND " if currentFilter else ""
+        newFilter = f'{currentFilter}{FILTER_COMMENT_START}{connect}{filterDef.filterString(layer)}{FILTER_COMMENT_STOP}'
+        layer.setSubsetString(newFilter)
+
+
+from qgis.core import QgsGeometry, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject
+
+def reproject_wkt_geometry(wkt: str, source_crs_epsg: int, target_crs_epsg: int) -> str:
+    """
+    Reproject a WKT geometry from a source CRS to a target CRS.
+
+    Args:
+        wkt (str): The WKT geometry to reproject.
+        source_crs_epsg (int): The EPSG code of the source CRS.
+        target_crs_epsg (int): The EPSG code of the target CRS.
+
+    Returns:
+        str: The reprojected WKT geometry.
+    """
+    # Create the source and target CRS objects
+    source_crs = QgsCoordinateReferenceSystem(source_crs_epsg)
+    target_crs = QgsCoordinateReferenceSystem(target_crs_epsg)
+    transform = QgsCoordinateTransform(source_crs, target_crs, QgsProject.instance())
+    geometry = QgsGeometry.fromWkt(wkt)
+    geometry.transform(transform)
+    return geometry.asWkt()
+
 
 
 def getLayerGeomName(layer: QgsVectorLayer):
@@ -116,6 +159,11 @@ def getLayerGeomNameOgr(layer: QgsVectorLayer):
     ogrLayer = None
     conn = None
     return columnName
+
+
+def getEntityTypeFromSensorThingsLayer(layer: QgsVectorLayer):
+    decoded_url = QgsProviderRegistry.instance().decodeUri(layer.providerType(), layer.dataProvider().dataSourceUri())
+    return decoded_url.get('entity')
 
 
 def hasLayerException(layer: QgsVectorLayer) -> bool:

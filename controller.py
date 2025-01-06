@@ -1,7 +1,7 @@
 from typing import Iterable, Optional, List
 
 from qgis.PyQt.QtCore import pyqtSignal, QObject
-from qgis.core import Qgis, QgsProject, QgsMapLayer, QgsMapLayerType, QgsWkbTypes, QgsGeometry
+from qgis.core import QgsProject, QgsMapLayer, QgsMapLayerType, QgsWkbTypes, QgsGeometry
 from qgis.gui import QgsRubberBand
 from qgis.utils import iface
 
@@ -125,6 +125,7 @@ class FilterController(QObject):
         self.mapTool.deactivate()
 
     def onSketchFinished(self, geometry: QgsGeometry):
+        geometry.convertToSingleType() # SensorThings Filter only supports single geometry type
         self.stopSketchingTool()
         if not geometry.isGeosValid():
             iface.messageBar().pushWarning(LOCALIZED_PLUGIN_NAME, self.tr("Geometry is not valid"))
