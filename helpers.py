@@ -98,7 +98,7 @@ def isLayerSupported(layer: QgsMapLayer):
 
 def removeFilterFromLayer(layer: QgsVectorLayer):
     if layer.storageType() == SENSORTHINGS_STORAGE_TYPE:
-        layer.setSubsetString('')
+        layer.setSubsetString('') # sensorthings filter does not support comments (FILTER_COMMENT_START)
     else:
         currentFilter = layer.subsetString()
         if FILTER_COMMENT_START not in currentFilter:
