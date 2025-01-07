@@ -5,8 +5,20 @@ from typing import Any, List, Iterable
 
 from osgeo import ogr
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import Qgis, QgsExpressionContextUtils, QgsSettings, QgsMapLayer, QgsMapLayerType, QgsVectorLayer,\
-    QgsWkbTypes, QgsProviderRegistry
+from qgis.core import (
+    Qgis, 
+    QgsExpressionContextUtils, 
+    QgsSettings, 
+    QgsMapLayer, 
+    QgsMapLayerType, 
+    QgsVectorLayer,
+    QgsWkbTypes, 
+    QgsProviderRegistry, 
+    QgsGeometry, 
+    QgsCoordinateReferenceSystem,     
+    QgsCoordinateTransform, 
+    QgsProject
+)
 
 from qgis.utils import iface
 
@@ -111,7 +123,7 @@ def addFilterToLayer(layer: QgsVectorLayer, filterDef: 'FilterDefinition'):
         layer.setSubsetString(newFilter)
 
 
-from qgis.core import QgsGeometry, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject
+
 
 def reproject_wkt_geometry(wkt: str, source_crs_epsg: int, target_crs_epsg: int) -> str:
     """
@@ -125,7 +137,6 @@ def reproject_wkt_geometry(wkt: str, source_crs_epsg: int, target_crs_epsg: int)
     Returns:
         str: The reprojected WKT geometry.
     """
-    # Create the source and target CRS objects
     source_crs = QgsCoordinateReferenceSystem(source_crs_epsg)
     target_crs = QgsCoordinateReferenceSystem(target_crs_epsg)
     transform = QgsCoordinateTransform(source_crs, target_crs, QgsProject.instance())
