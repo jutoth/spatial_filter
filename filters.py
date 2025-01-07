@@ -97,7 +97,7 @@ class FilterDefinition:
                 geom_name=geom_field,
                 wkt=reprojected_wkt
             )
-
+        # ST_DISJOINT does not use spatial indexes, but we can use its opposite "NOT ST_INTERSECTS" which does
         if self.predicate == Predicate.DISJOINT:
             spatial_predicate = "NOT ST_INTERSECTS"
 
