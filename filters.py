@@ -17,8 +17,6 @@ if Qgis.QGIS_VERSION_INT > 33600:
 from qgis.utils import iface
 
 from .settings import (
-    FILTER_COMMENT_START, 
-    FILTER_COMMENT_STOP, 
     LOCALIZED_PLUGIN_NAME,
     SENSORTHINGS_STORAGE_TYPE
 )
@@ -30,9 +28,9 @@ from .helpers import (
     allSettingsValues, 
     removeSettingsValue,
     getLayerGeomName, 
-    matchFormatString, 
-    getEntityTypeFromSensorThingsLayer,
-    reproject_wkt_geometry
+    matchFormatString,
+    reproject_geometry,
+    getFilterStartStopString
 )
 
 
@@ -84,24 +82,27 @@ class FilterDefinition:
         wkt = self.wkt if not self.bbox else self.boxGeometry.asWkt()
         srid=self.crs.postgisSrid()
         layer_srid=layer.crs().postgisSrid()
+        geom_name = getLayerGeomName(layer)
 
         if layer.storageType() == SENSORTHINGS_STORAGE_TYPE:
-            reprojected_wkt = reproject_wkt_geometry(wkt, srid, layer_srid)
+            # SensorThings only supports single geometry types
+            single_geometry = QgsGeometry.fromWkt(wkt)
+            single_geometry.convertToSingleType()
+
+            # SensorThings filter does not support reprojection (st_transform)
+            # thats why the reprojection must be executed on client-side.
+            reprojected_geometry = reproject_geometry(single_geometry, srid, layer_srid)
+
             spatial_predicate = spatial_predicate.lower()  # sensorthings specification uses lower case
-            entity_str = getEntityTypeFromSensorThingsLayer(layer)
-            entity_type = QgsSensorThingsUtils.stringToEntity(entity_str)
-            geom_field = QgsSensorThingsUtils.geometryFieldForEntityType(entity_type)
 
             return FILTERSTRING_TEMPLATE_SENSORTHINGS.format(
                 spatial_predicate=spatial_predicate,
-                geom_name=geom_field,
-                wkt=reprojected_wkt
+                geom_name=geom_name,
+                wkt=reprojected_geometry.asWkt()
             )
         # ST_DISJOINT does not use spatial indexes, but we can use its opposite "NOT ST_INTERSECTS" which does
         if self.predicate == Predicate.DISJOINT:
             spatial_predicate = "NOT ST_INTERSECTS"
-
-        geom_name = getLayerGeomName(layer)
 
         return FILTERSTRING_TEMPLATE.format(
             spatial_predicate=spatial_predicate,
@@ -113,15 +114,24 @@ class FilterDefinition:
 
 
     @staticmethod
-    def fromFilterString(subsetString: str) -> 'FilterDefinition':
-        start_index = subsetString.find(FILTER_COMMENT_START) + len(FILTER_COMMENT_START)
-        stop_index = subsetString.find(FILTER_COMMENT_STOP)
+    def fromFilterString(layer: QgsVectorLayer) -> 'FilterDefinition':
+        subsetString = layer.subsetString()
+        FILTER_START_STRING, FILTER_STOP_STRING = getFilterStartStopString(layer)
+        start_index = subsetString.find(FILTER_START_STRING) + len(FILTER_START_STRING)
+        stop_index = subsetString.find(FILTER_STOP_STRING)
         filterString = subsetString[start_index: stop_index]
         filterString = filterString.replace(' AND ', '')
-        params = matchFormatString(FILTERSTRING_TEMPLATE, filterString)
-        predicateName = params['spatial_predicate'][len('ST_'):]
-        if filterString.startswith('NOT ST_INTERSECTS'):
-            predicateName = 'DISJOINT'
+
+        if layer.storageType() == SENSORTHINGS_STORAGE_TYPE:
+            params = matchFormatString(FILTERSTRING_TEMPLATE, filterString)
+            predicateName = params['spatial_predicate'][len('st_'):]
+
+        else:
+            params = matchFormatString(FILTERSTRING_TEMPLATE, filterString)
+            predicateName = params['spatial_predicate'][len('ST_'):]
+            if filterString.startswith('NOT ST_INTERSECTS'):
+                predicateName = 'DISJOINT'#
+
         predicate = Predicate[predicateName]
         filterDefinition = FilterDefinition(
             name=tr('Unknown filter'),

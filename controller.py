@@ -8,8 +8,8 @@ from qgis.utils import iface
 from .maptool import PolygonTool
 from .filters import FilterDefinition, Predicate
 from .helpers import getSupportedLayers, removeFilterFromLayer, addFilterToLayer, refreshLayerTree, hasLayerException, \
-    warnAboutCurveGeoms
-from .settings import FILTER_COMMENT_START, LOCALIZED_PLUGIN_NAME
+    warnAboutCurveGeoms, getFilterStartStopString
+from .settings import LOCALIZED_PLUGIN_NAME
 
 
 class FilterController(QObject):
@@ -51,7 +51,8 @@ class FilterController(QObject):
         else:
             # Look for saved filters to use with the plugin (possible when project was loaded)
             for layer in getSupportedLayers(layers):
-                if FILTER_COMMENT_START in layer.subsetString():
+                FILTER_START_STRING, _ = getFilterStartStopString(layer)
+                if FILTER_START_STRING in layer.subsetString():
                     self.setFilterFromLayer(layer)
                     return
 
@@ -63,7 +64,7 @@ class FilterController(QObject):
         self.removeFilter()
 
     def setFilterFromLayer(self, layer):
-        filterDefinition = FilterDefinition.fromFilterString(layer.subsetString())
+        filterDefinition = FilterDefinition.fromFilterString(layer)
         self.currentFilter = filterDefinition
         self.refreshFilter()
 
@@ -125,7 +126,6 @@ class FilterController(QObject):
         self.mapTool.deactivate()
 
     def onSketchFinished(self, geometry: QgsGeometry):
-        geometry.convertToSingleType() # SensorThings Filter only supports single geometry type
         self.stopSketchingTool()
         if not geometry.isGeosValid():
             iface.messageBar().pushWarning(LOCALIZED_PLUGIN_NAME, self.tr("Geometry is not valid"))
